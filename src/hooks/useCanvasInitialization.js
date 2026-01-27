@@ -153,16 +153,12 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
       const objects = canvas.getObjects();
       objects.forEach(obj => {
-        // Always enable controls and borders for video objects when they're selectable
-        if (obj.type === 'videoImage' || obj.type === 'CoverVideo') {
-          obj.set({
-            hasControls: shouldShowControls || obj.selectable,
-            hasBorders: shouldShowControls || obj.selectable,
-          });
-        } else {
+        // Enable controls for all selectable objects
+        if (obj.selectable) {
           obj.set({
             hasControls: shouldShowControls,
             hasBorders: shouldShowControls,
+            hasRotatingPoint: shouldShowControls,
           });
         }
       });
@@ -187,18 +183,29 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
 
     fabric.Object.prototype.set({
       transparentCorners: false,
-      cornerColor: 'transparent',
+      cornerColor: '#D3F85A',
       cornerStyle: 'circle',
-      cornerStrokeColor: 'transparent',
-      cornerSize: 20,
+      cornerStrokeColor: '#ffffff',
+      cornerSize: 16,
       cornerStrokeWidth: 2,
-      padding: 0,
-      borderColor: 'transparent',
-      borderScaleFactor: 2.5,
-      borderOpacityWhenMoving: 0,
-      hasControls: false,
-      hasBorders: false,
+      padding: 5,
+      borderColor: '#D3F85A',
+      borderScaleFactor: 1.5,
+      borderOpacityWhenMoving: 0.8,
+      hasControls: true,
+      hasBorders: true,
+      hasRotatingPoint: true,
+      rotatingPointOffset: 30,
+      lockScalingFlip: true,
+      lockSkewingX: true,
+      lockSkewingY: true,
     });
+
+    // Customize rotation cursor
+    fabric.Object.prototype.cursorStyle = 'grab';
+    fabric.Canvas.prototype.setCursor = function(cursor) {
+      this.upperCanvasEl.style.cursor = cursor;
+    };
 
     // Calculate canvas dimensions based on aspect ratio
     const canvasAspectRatio = store.getAspectRatioValue() || (9 / 16);
@@ -422,8 +429,8 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     };
 
     canvas.set({
-      selectionColor: 'rgba(211, 248, 90, 0.15)',
-      selectionBorderColor: accentColor,
+      selectionColor: 'rgba(211, 248, 90, 0.3)',
+      selectionBorderColor: '#D3F85A',
       selectionLineWidth: 2,
     });
 
@@ -461,6 +468,152 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
     });
 
     store.setCanvas(canvas);
+
+    // Add boundary checking to prevent objects from being dragged outside canvas
+    canvas.on('object:moving', function(e) {
+      const obj = e.target;
+      if (!obj) return;
+      
+      const bounds = {
+        left: 0,
+        top: 0,
+        right: canvas.width,
+        bottom: canvas.height
+      };
+      
+      // Get the object's bounding box
+      const objBounds = obj.getBoundingRect(true);
+      
+      // Only apply constraints if object is actually outside bounds
+      let needsUpdate = false;
+      let newLeft = obj.left;
+      let newTop = obj.top;
+      
+      // Check left boundary
+      if (objBounds.left < bounds.left) {
+        newLeft = bounds.left + (obj.left - objBounds.left);
+        needsUpdate = true;
+      }
+      
+      // Check top boundary
+      if (objBounds.top < bounds.top) {
+        newTop = bounds.top + (obj.top - objBounds.top);
+        needsUpdate = true;
+      }
+      
+      // Check right boundary
+      if (objBounds.left + objBounds.width > bounds.right) {
+        newLeft = bounds.right - objBounds.width + (obj.left - objBounds.left);
+        needsUpdate = true;
+      }
+      
+      // Check bottom boundary
+      if (objBounds.top + objBounds.height > bounds.bottom) {
+        newTop = bounds.bottom - objBounds.height + (obj.top - objBounds.top);
+        needsUpdate = true;
+      }
+      
+      // Only update position if needed
+      if (needsUpdate) {
+        obj.set({
+          left: newLeft,
+          top: newTop
+        });
+        obj.setCoords();
+      }
+    });
+
+    // Also check boundaries on mouse:up to ensure object is clamped when drag ends
+    canvas.on('mouse:up', function(e) {
+      const activeObject = canvas.getActiveObject();
+      if (!activeObject) return;
+      
+      const bounds = {
+        left: 0,
+        top: 0,
+        right: canvas.width,
+        bottom: canvas.height
+      };
+      
+      // Get the object's bounding box
+      const objBounds = activeObject.getBoundingRect(true);
+      
+      // Only apply constraints if object is actually outside bounds
+      let needsUpdate = false;
+      let newLeft = activeObject.left;
+      let newTop = activeObject.top;
+      
+      // Check left boundary
+      if (objBounds.left < bounds.left) {
+        newLeft = bounds.left + (activeObject.left - objBounds.left);
+        needsUpdate = true;
+      }
+      
+      // Check top boundary
+      if (objBounds.top < bounds.top) {
+        newTop = bounds.top + (activeObject.top - objBounds.top);
+        needsUpdate = true;
+      }
+      
+      // Check right boundary
+      if (objBounds.left + objBounds.width > bounds.right) {
+        newLeft = bounds.right - objBounds.width + (activeObject.left - objBounds.left);
+        needsUpdate = true;
+      }
+      
+      // Check bottom boundary
+      if (objBounds.top + objBounds.height > bounds.bottom) {
+        newTop = bounds.bottom - objBounds.height + (activeObject.top - objBounds.top);
+        needsUpdate = true;
+      }
+      
+      // Only update position if needed
+      if (needsUpdate) {
+        activeObject.set({
+          left: newLeft,
+          top: newTop
+        });
+        activeObject.setCoords();
+        canvas.renderAll();
+      }
+    });
+
+    // Add proper cursor handling
+    canvas.on('mouse:move', function(e) {
+      if (!e.target) {
+        canvas.setCursor('default');
+        return;
+      }
+      
+      const activeObject = canvas.getActiveObject();
+      if (!activeObject) {
+        canvas.setCursor('grab');
+        return;
+      }
+      
+      // Check if hovering over rotation control
+      const pointer = canvas.getPointer(e.e);
+      const corner = activeObject.__corner;
+      
+      if (corner === 'mtr') {
+        canvas.setCursor('grab');
+      } else if (corner && corner !== 'mtr') {
+        // Resize cursors
+        const cursors = {
+          tl: 'nwse-resize',
+          tr: 'nesw-resize',
+          bl: 'nesw-resize',
+          br: 'nwse-resize',
+          mt: 'ns-resize',
+          mb: 'ns-resize',
+          ml: 'ew-resize',
+          mr: 'ew-resize'
+        };
+        canvas.setCursor(cursors[corner] || 'default');
+      } else {
+        canvas.setCursor('move');
+      }
+    });
 
     fabric.util.requestAnimFrame(function render() {
       canvas.renderAll();
@@ -543,221 +696,6 @@ export const useCanvasInitialization = (videoPanelRef, store) => {
         hoverBox.style.display = 'none';
       }
     }
-
-    setTimeout(() => {
-      selectionLayer = document.getElementById('selection-layer');
-
-      if (!selectionLayer) {
-        console.error('Selection layer not found');
-        return;
-      }
-
-      let contentBoxEl = null;
-
-      contentBoxEl = document.querySelector('.VideoCreationPage_content_box');
-
-      if (!contentBoxEl) {
-        contentBoxEl = document.querySelector(
-          '[class*="VideoCreationPage_content_box"]'
-        );
-      }
-
-      if (!contentBoxEl) {
-        console.warn('Cannot find VideoCreationPage_content_box element');
-        return;
-      }
-
-      const contentBoxRect = contentBoxEl.getBoundingClientRect();
-
-      const selectionContainer = document.createElement('div');
-      selectionContainer.id = 'selection-container';
-      selectionContainer.style.position = 'fixed';
-      selectionContainer.style.width = `${contentBoxRect.width}px`;
-      selectionContainer.style.height = `${contentBoxRect.height}px`;
-      selectionContainer.style.top = `${contentBoxRect.top}px`;
-      selectionContainer.style.left = `${contentBoxRect.left}px`;
-      selectionContainer.style.overflow = 'hidden';
-      selectionContainer.style.pointerEvents = 'none';
-      selectionContainer.style.zIndex = '10000';
-
-      document.body.appendChild(selectionContainer);
-
-      selectionLayer.parentNode.removeChild(selectionLayer);
-      selectionContainer.appendChild(selectionLayer);
-
-      selectionLayer.style.position = 'absolute';
-      selectionLayer.style.top = '0';
-      selectionLayer.style.left = '0';
-      selectionLayer.style.width = '100%';
-      selectionLayer.style.height = '100%';
-      selectionLayer.style.overflow = 'visible';
-      selectionLayer.style.pointerEvents = 'none';
-
-      store.selectionContainer = selectionContainer;
-      store.contentBoxEl = contentBoxEl;
-      store.originalSelectionLayerParent = contentBoxEl.querySelector(
-        '.Player_canvasWrapper'
-      );
-
-      const updateContainerPosition = () => {
-        if (!contentBoxEl) return;
-
-        const updatedRect = contentBoxEl.getBoundingClientRect();
-        selectionContainer.style.width = `${updatedRect.width}px`;
-        selectionContainer.style.height = `${updatedRect.height}px`;
-        selectionContainer.style.top = `${updatedRect.top}px`;
-        selectionContainer.style.left = `${updatedRect.left}px`;
-
-        if (canvas.getActiveObject()) {
-          requestAnimationFrame(() => createCustomSelectionOutline());
-        }
-      };
-
-      window.addEventListener('resize', updateContainerPosition);
-      window.addEventListener('scroll', updateContainerPosition);
-      window.addEventListener('orientationchange', updateContainerPosition);
-
-      store.updateContainerPosition = updateContainerPosition;
-
-      const observer = new MutationObserver(mutations => {
-        updateContainerPosition();
-      });
-
-      observer.observe(contentBoxEl, {
-        attributes: true,
-        attributeFilter: ['style', 'class'],
-        subtree: false,
-      });
-
-      store.containerObserver = observer;
-
-      canvas.on('selection:created', function(e) {
-        // Enable controls for video objects when selected
-        if (e.selected && e.selected.length > 0) {
-          e.selected.forEach(obj => {
-            if (obj.type === 'videoImage' || obj.type === 'CoverVideo') {
-              obj.set({
-                hasControls: true,
-                hasBorders: true,
-              });
-            }
-          });
-        }
-        createCustomSelectionOutline();
-      });
-      canvas.on('selection:updated', function(e) {
-        // Enable controls for video objects when selected
-        if (e.selected && e.selected.length > 0) {
-          e.selected.forEach(obj => {
-            if (obj.type === 'videoImage' || obj.type === 'CoverVideo') {
-              obj.set({
-                hasControls: true,
-                hasBorders: true,
-              });
-            }
-          });
-        }
-        createCustomSelectionOutline();
-      });
-      canvas.on('selection:cleared', e => {
-        if (forceKeepSelection && lastActiveObject) {
-          setTimeout(() => {
-            canvas.setActiveObject(lastActiveObject);
-            canvas.renderAll();
-          }, 0);
-          return;
-        }
-
-        if (!isResizing && !activeControlPoint) {
-          clearSelectionLayer();
-          // Clear guidelines when selection is cleared
-          store.clearGuidelines();
-        }
-      });
-      canvas.on('object:moving', function (e) {
-        if (e.target && selectionLayer) {
-          lastActiveObject = e.target;
-          updateControlPointsPositions(e.target);
-        }
-      });
-      
-      canvas.on('object:moved', function (e) {
-        // Clear guidelines after moving is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      
-      canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
-        }
-        // Clear guidelines after object modification is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      canvas.on('object:scaling', function (e) {
-        if (e.target && selectionLayer) {
-          lastActiveObject = e.target;
-          updateControlPointsPositions(e.target);
-        }
-      });
-      
-      canvas.on('object:scaled', function (e) {
-        // Clear guidelines after scaling is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      canvas.on('object:rotating', function (e) {
-        if (e.target && selectionLayer) {
-          lastActiveObject = e.target;
-          updateControlPointsPositions(e.target);
-        }
-      });
-      
-      canvas.on('object:rotated', function (e) {
-        // Clear guidelines after rotation is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      canvas.on('object:modified', function (e) {
-        if (e.target && selectionLayer) {
-          createCustomSelectionOutline();
-        }
-        // Clear guidelines after object modification is complete
-        setTimeout(() => {
-          if (!canvas.getActiveObject()) {
-            store.clearGuidelines();
-          }
-        }, 100);
-      });
-      canvas.on('mouse:up', e => {
-        if (canvas.getActiveObject()) {
-          lastActiveObject = canvas.getActiveObject();
-        }
-
-        if (!isResizing && !activeControlPoint) {
-          createCustomSelectionOutline();
-        }
-      });
-      canvas.on('mouse:wheel', createCustomSelectionOutline);
-      canvas.on('mouse:move', function (e) {
-        if (canvas.getActiveObject() && selectionLayer) {
-          updateControlPointsPositions(canvas.getActiveObject());
-        }
-      });
-    }, 100);
 
     function getCanvasRelativePosition(e) {
       const canvasEl = canvas.getElement();

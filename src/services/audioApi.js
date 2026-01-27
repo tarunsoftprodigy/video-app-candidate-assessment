@@ -42,6 +42,7 @@ export const removeSilence = async ({
   startThreshold = '-45dB',
   stopThreshold = '-35dB',
   stopDuration = '0.3',
+  startDuration = '0.1',
 }) => {
   try {
     const response = await axios.post(
@@ -51,6 +52,7 @@ export const removeSilence = async ({
         startThreshold,
         stopThreshold,
         stopDuration,
+        startDuration,
       },
       {
         headers: getAuthHeaders(),

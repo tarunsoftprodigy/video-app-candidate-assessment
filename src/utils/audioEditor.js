@@ -161,6 +161,113 @@ class AudioEditor {
     return newBuffer;
   }
 
+  // Remove silence from audio with advanced settings
+  async removeSilenceAdvanced(audioBuffer, options = {}) {
+    const {
+      startThresholdDb = -45,
+      stopThresholdDb = -35,
+      startDurationMs = 100,
+      stopDurationMs = 300
+    } = options;
+    
+    const audioContext = this.createAudioContext();
+    const sampleRate = audioBuffer.sampleRate;
+    const channelData = audioBuffer.getChannelData(0);
+    
+    const startThreshold = Math.pow(10, startThresholdDb / 20);
+    const stopThreshold = Math.pow(10, stopThresholdDb / 20);
+    const startDurationSamples = Math.floor((startDurationMs / 1000) * sampleRate);
+    const stopDurationSamples = Math.floor((stopDurationMs / 1000) * sampleRate);
+    
+    // Handle edge cases
+    if (audioBuffer.length === 0) {
+      throw new Error('Empty audio buffer');
+    }
+    
+    // Check if entire audio is silence
+    const maxAmplitude = Math.max(...channelData.map(Math.abs));
+    if (maxAmplitude < startThreshold) {
+      throw new Error('Audio contains only silence');
+    }
+    
+    // Find leading silence
+    let leadingSilenceEnd = 0;
+    let silenceStart = 0;
+    
+    for (let i = 0; i < channelData.length; i++) {
+      const amplitude = Math.abs(channelData[i]);
+      
+      if (amplitude >= startThreshold) {
+        // Check if we have enough non-silent audio to end the leading silence
+        let nonSilentCount = 0;
+        for (let j = i; j < Math.min(i + startDurationSamples, channelData.length); j++) {
+          if (Math.abs(channelData[j]) >= startThreshold) {
+            nonSilentCount++;
+          }
+        }
+        
+        if (nonSilentCount >= startDurationSamples * 0.8) { // 80% threshold
+          leadingSilenceEnd = i;
+          break;
+        }
+      }
+    }
+    
+    // Find trailing silence
+    let trailingSilenceStart = channelData.length;
+    
+    for (let i = channelData.length - 1; i >= leadingSilenceEnd; i--) {
+      const amplitude = Math.abs(channelData[i]);
+      
+      if (amplitude >= stopThreshold) {
+        // Check if we have enough non-silent audio to end the trailing silence
+        let nonSilentCount = 0;
+        for (let j = i; j >= Math.max(i - stopDurationSamples, leadingSilenceEnd); j--) {
+          if (Math.abs(channelData[j]) >= stopThreshold) {
+            nonSilentCount++;
+          }
+        }
+        
+        if (nonSilentCount >= stopDurationSamples * 0.8) { // 80% threshold
+          trailingSilenceStart = i + 1;
+          break;
+        }
+      }
+    }
+    
+    // Check if there's anything left after removing silence
+    const remainingDuration = trailingSilenceStart - leadingSilenceEnd;
+    if (remainingDuration <= 0) {
+      throw new Error('No audio content after silence removal');
+    }
+    
+    // Create new buffer with trimmed audio
+    const newBuffer = audioContext.createBuffer(
+      audioBuffer.numberOfChannels,
+      remainingDuration,
+      sampleRate
+    );
+    
+    // Copy audio data (excluding leading and trailing silence)
+    for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+      const originalData = audioBuffer.getChannelData(channel);
+      const newData = newBuffer.getChannelData(channel);
+      
+      for (let i = 0; i < remainingDuration; i++) {
+        newData[i] = originalData[leadingSilenceEnd + i];
+      }
+    }
+    
+    return {
+      buffer: newBuffer,
+      leadingSilenceRemoved: leadingSilenceEnd,
+      trailingSilenceRemoved: channelData.length - trailingSilenceStart,
+      originalDuration: audioBuffer.duration,
+      newDuration: newBuffer.duration,
+      samplesRemoved: leadingSilenceEnd + (channelData.length - trailingSilenceStart)
+    };
+  }
+
   // Resize audio (change duration without changing pitch)
   async resizeAudio(audioBuffer, newDuration) {
     const audioContext = this.createAudioContext();
