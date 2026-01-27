@@ -9070,6 +9070,173 @@ export class Store {
     }, duration);
   }
 
+  splitVideoElement(element, splitPoint) {
+    if (!element || element.type !== 'video') return;
+    
+    const { start, end } = element.timeFrame;
+    
+    // Validate split point is within element bounds
+    if (splitPoint <= start || splitPoint >= end) {
+      console.warn('Split point must be within element bounds');
+      return;
+    }
+    
+    // Create first clip (from start to splitPoint)
+    const firstClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (1)`,
+      timeFrame: {
+        start: start,
+        end: splitPoint
+      },
+      properties: {
+        ...element.properties,
+        videoOffset: (element.properties.videoOffset || 0) + (splitPoint - start)
+      }
+    };
+    
+    // Create second clip (from splitPoint to end)
+    const secondClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (2)`,
+      timeFrame: {
+        start: splitPoint,
+        end: end
+      },
+      properties: {
+        ...element.properties,
+        videoOffset: element.properties.videoOffset || 0
+      }
+    };
+    
+    // Remove original element and add the two new clips
+    runInAction(() => {
+      const otherElements = this.editorElements.filter(el => el.id !== element.id);
+      this.setEditorElements([firstClip, secondClip, ...otherElements]);
+      this.refreshElements();
+      
+      // Save timeline state for undo/redo
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    });
+  }
+
+  splitAudioElement(element, splitPoint) {
+    if (!element || element.type !== 'audio') return;
+    
+    const { start, end } = element.timeFrame;
+    
+    // Validate split point is within element bounds
+    if (splitPoint <= start || splitPoint >= end) {
+      console.warn('Split point must be within element bounds');
+      return;
+    }
+    
+    // Create first clip (from start to splitPoint)
+    const firstClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (1)`,
+      timeFrame: {
+        start: start,
+        end: splitPoint
+      },
+      properties: {
+        ...element.properties,
+        audioOffset: (element.properties.audioOffset || 0) + (splitPoint - start)
+      }
+    };
+    
+    // Create second clip (from splitPoint to end)
+    const secondClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (2)`,
+      timeFrame: {
+        start: splitPoint,
+        end: end
+      },
+      properties: {
+        ...element.properties,
+        audioOffset: element.properties.audioOffset || 0
+      }
+    };
+    
+    // Remove original element and add the two new clips
+    runInAction(() => {
+      const otherElements = this.editorElements.filter(el => el.id !== element.id);
+      this.setEditorElements([firstClip, secondClip, ...otherElements]);
+      this.refreshElements();
+      
+      // Save timeline state for undo/redo
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    });
+  }
+
+  splitImageElement(element, splitPoint) {
+    if (!element || (element.type !== 'imageUrl' && element.type !== 'image')) return;
+    
+    const { start, end } = element.timeFrame;
+    
+    // Validate split point is within element bounds
+    if (splitPoint <= start || splitPoint >= end) {
+      console.warn('Split point must be within element bounds');
+      return;
+    }
+    
+    // Create first clip (from start to splitPoint)
+    const firstClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (1)`,
+      timeFrame: {
+        start: start,
+        end: splitPoint
+      }
+    };
+    
+    // Create second clip (from splitPoint to end)
+    const secondClip = {
+      ...element,
+      id: getUid(),
+      name: `${element.name} (2)`,
+      timeFrame: {
+        start: splitPoint,
+        end: end
+      }
+    };
+    
+    // Clone fabric object for the second clip
+    if (element.fabricObject) {
+      element.fabricObject.clone(clonedObj => {
+        if (clonedObj) {
+          clonedObj.set({
+            left: element.fabricObject.left + 20,
+            top: element.fabricObject.top + 20
+          });
+          secondClip.fabricObject = clonedObj;
+        }
+      });
+    }
+    
+    // Remove original element and add the two new clips
+    runInAction(() => {
+      const otherElements = this.editorElements.filter(el => el.id !== element.id);
+      this.setEditorElements([firstClip, secondClip, ...otherElements]);
+      this.refreshElements();
+      
+      // Save timeline state for undo/redo
+      if (window.dispatchSaveTimelineState && !this.isUndoRedoOperation) {
+        window.dispatchSaveTimelineState(this);
+      }
+    });
+  }
+
   setPlaying(playing) {
     if (this.rafId) {
       cancelAnimationFrame(this.rafId);

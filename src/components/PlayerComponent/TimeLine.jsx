@@ -1096,8 +1096,19 @@ export const TimeLine = observer(
         // and not on any timeline items or controls
         const isTimelineItem = e.target.closest('[data-timeline-item]');
         const isTimelineControl = e.target.closest('[data-timeline-control]');
+
+        // If we're in cut mode and click on empty timeline area, exit cut mode
+        if (isCutMode && !isTimelineItem && !isTimelineControl) {
+          setIsCutMode(false);
+          return;
+        }
+
+        // Prevent default behavior if needed
+        if (isCutMode) {
+          e.preventDefault();
+        }
       },
-      [store, dispatch]
+      [isCutMode, setIsCutMode, store, dispatch]
     );
 
     const handleCutClick = () => {
